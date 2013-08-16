@@ -1,10 +1,15 @@
 #!/bin/bash
 
+if [ -f "$HOME/.gpxify" ]; then
+	. "$HOME/.gpxify"
+fi
+
 : ${OGR2VRT:=ogr2vrt}
 : ${OGR2OGR:=ogr2ogr}
 : ${OGRINFO:=ogrinfo}
 
-ADD_SYMBOL_XSL=${0%/*}/add_symbol.xslt
+GPXIFYDIR=$(cd $(dirname $0); pwd)
+FIXUP_GPX=$GPXIFYDIR/fixup_gpx.py
 
 BEACONS="BCNCAR|BCNISD|BCNLAT|BCNSAW|BCNSPP"
 BUOYS="BOYCAR|BOYINB|BOYISD|BOYLAT|BOYSAW|BOYSPP"
@@ -17,8 +22,11 @@ trap 'rm -rf $tmpdir' EXIT INT HUP
 gen_gpx () {
 	local map=$1
 	local suffix=$2
-	local symbol=$3
-	local objects=$4
+	local wptprefix=$3
+	local symbol=$4
+	local objects=$5
+
+	echo "+ Generating $suffix map from $map"
 
 	rm -f $tmpdir/stage1 $tmpdir/stage2 $map-$suffix.gpx
 
@@ -28,25 +36,22 @@ gen_gpx () {
 		$($OGRINFO $map.000 2>/dev/null |
 			awk '/^[0-9]/ {print $2}' | egrep "$objects")
 
-	sed '
-	/<\/wpt>/ i\
-	<sym>'"$symbol"'</sym>
-	' $tmpdir/stage1 > $map-$suffix.gpx
+	$FIXUP_GPX -f "$wptprefix" -s "$symbol" < $tmpdir/stage1 > $map-$suffix.gpx
 }
 
 for path in "$@"; do
 	map=${path##*/}
 (
-	cd $path
+	cd $path || exit
+
 	$OGR2VRT $map.000 $tmpdir/map.vrt.in
 	sed '
-		/OBJNAM/ s/OBJNAM/name/
-		/INFORM/ s/INFORM/desc/
+		/OBJNAM/ s/OBJNAM/desc/
 	' $tmpdir/map.vrt.in > $tmpdir/map.vrt
 
-	gen_gpx $map beacons "Navaid, Amber" $BEACONS
-	gen_gpx $map lights Light $LIGHTS
-	gen_gpx $map buoys "Buoy, White" $BUOYS
+	gen_gpx $map beacons "BEACON%03d" "Navaid, Amber" $BEACONS
+	gen_gpx $map lights "LIGHT%03d" Light $LIGHTS
+	gen_gpx $map buoys "BUOY%03d" "Buoy, White" $BUOYS
 
 	gpsbabel -i gpx -f $map-beacons.gpx -f $map-lights.gpx -f $map-buoys.gpx \
 		-o gpx -F $map.gpx

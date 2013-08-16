@@ -18,6 +18,7 @@
   <xsl:template match="gpx:wpt">
     <xsl:copy>
       <xsl:apply-templates select="@*|node()"/>
+      <gpx:name>WPT<xsl:number value="position()" format="001"/></gpx:name>
       <gpx:sym><xsl:value-of select="$symbol_name"/></gpx:sym>
     </xsl:copy>
   </xsl:template>
